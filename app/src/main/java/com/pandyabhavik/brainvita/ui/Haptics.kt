@@ -39,7 +39,8 @@ class Haptics(context: Context) {
 
     private fun vibrate(v: Vibrator, effect: VibrationEffect) {
         if (Build.VERSION.SDK_INT >= 33) {
-            v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_GAME))
+            // Media usage: not silenced by the system "Touch feedback" toggle the way USAGE_TOUCH is.
+            v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
         } else {
             @Suppress("DEPRECATION")
             v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
