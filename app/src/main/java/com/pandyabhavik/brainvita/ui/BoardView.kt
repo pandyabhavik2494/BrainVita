@@ -52,6 +52,7 @@ fun BoardView(
     lastMove: Move?,
     onTap: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    marble: Marble = Marble.BRASS,
 ) {
     // 0 = the moment before the jump, 1 = settled in the new hole.
     val flight = remember(lastMove) { Animatable(if (lastMove == null) 1f else 0f) }
@@ -116,21 +117,21 @@ fun BoardView(
                         if (inFlight != null && i == inFlight.to) continue
                         if (inFlight != null && i == inFlight.over) {
                             val sink = 1f - t
-                            drawPeg(g.centre(i), pegRadius * sink, lift = 0f, alpha = sink)
+                            drawPeg(g.centre(i), pegRadius * sink, marble, lift = 0f, alpha = sink)
                             continue
                         }
                         if (!Rules.hasPeg(position, i)) continue
-                        drawPeg(g.centre(i), pegRadius, lift = 0f)
+                        drawPeg(g.centre(i), pegRadius, marble, lift = 0f)
                     }
                     if (selected != null && Rules.hasPeg(position, selected)) {
-                        drawPeg(g.centre(selected), pegRadius, lift = lift, ring = true)
+                        drawPeg(g.centre(selected), pegRadius, marble, lift = lift, ring = true)
                     }
                     if (inFlight != null) {
                         val from = g.centre(inFlight.from)
                         val to = g.centre(inFlight.to)
                         val eased = 1f - (1f - t) * (1f - t) // ease-out: quick off the mark, gentle landing
                         val arc = sin(eased * PI.toFloat()) // rises mid-jump
-                        drawPeg(Offset(from.x + (to.x - from.x) * eased, from.y + (to.y - from.y) * eased), pegRadius, lift = arc * 1.4f)
+                        drawPeg(Offset(from.x + (to.x - from.x) * eased, from.y + (to.y - from.y) * eased), pegRadius, marble, lift = arc * 1.4f)
                     }
                 }
             },
@@ -171,25 +172,25 @@ private fun DrawScope.drawHole(centre: Offset, radius: Float) {
 }
 
 /**
- * A turned brass peg seen from above. [lift] of 1 raises it one peg-radius off the board (bigger, with a
+ * A turned marble peg seen from above, in the chosen finish. [lift] of 1 raises it one peg-radius off the board (bigger, with a
  * longer, softer shadow); [ring] marks the peg the player is holding.
  */
-private fun DrawScope.drawPeg(centre: Offset, radius: Float, lift: Float, alpha: Float = 1f, ring: Boolean = false) {
+fun DrawScope.drawPeg(centre: Offset, radius: Float, marble: Marble, lift: Float, alpha: Float = 1f, ring: Boolean = false) {
     if (radius <= 0f) return
     val r = radius * (1f + 0.15f * lift)
     val shadowOffset = Offset(radius * (0.12f + 0.45f * lift), radius * (0.18f + 0.6f * lift))
     drawCircle(Color.Black.copy(alpha = 0.38f * alpha * (1f - 0.3f * lift)), r * (1f + 0.25f * lift), centre + shadowOffset)
     // Dark rim, then the domed body with a highlight up and to the left.
-    drawCircle(Palette.brassDark.copy(alpha = alpha), r, centre)
+    drawCircle(marble.dark.copy(alpha = alpha), r, centre)
     drawCircle(
         Brush.radialGradient(
-            listOf(Palette.brassLight.copy(alpha = alpha), Palette.brass.copy(alpha = alpha), Palette.brassDark.copy(alpha = alpha)),
+            listOf(marble.light.copy(alpha = alpha), marble.base.copy(alpha = alpha), marble.dark.copy(alpha = alpha)),
             center = centre - Offset(r * 0.3f, r * 0.35f), radius = r * 1.2f,
         ),
         r * 0.88f, centre,
     )
-    drawCircle(Color.White.copy(alpha = 0.55f * alpha), r * 0.18f, centre - Offset(r * 0.32f, r * 0.38f))
-    if (ring) drawCircle(Palette.glow.copy(alpha = 0.9f), r * 1.08f, centre, style = Stroke(r * 0.12f))
+    drawCircle(Color.White.copy(alpha = 0.65f * alpha), r * 0.18f, centre - Offset(r * 0.32f, r * 0.38f))
+    if (ring) drawCircle(marble.light.copy(alpha = 0.95f), r * 1.08f, centre, style = Stroke(r * 0.12f))
 }
 
 /** Maps hole grid units to pixels so the board fits the canvas, square and centred. */

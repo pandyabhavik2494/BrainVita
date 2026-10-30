@@ -12,6 +12,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,16 +24,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -40,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +57,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,27 +65,44 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.brainvita.ui.theme.Palette
+import kotlinx.coroutines.delay
 
 /** The whole app: one board, a few words, two buttons. Laid out for the Fold's cover screen or its inner screen. */
 @Composable
 fun GameScreen(viewModel: GameViewModel, sizeClass: WindowSizeClass) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val view = LocalView.current
+    val context = LocalContext.current
 
-    // One haptic per tap, matching what the tap did.
+    val sounds = remember { Sounds(context.applicationContext) }
+    DisposableEffect(sounds) { onDispose { sounds.release() } }
+
+    // One sound and one haptic per action, matching what the action did. Nothing plays on first load,
+    // even if the saved game was already over.
     LaunchedEffect(state.feedbackCount) {
         if (state.feedbackCount == 0) return@LaunchedEffect
-        val constant = when (state.feedback) {
-            Feedback.PICK_UP -> HapticFeedbackConstants.KEYBOARD_TAP
-            Feedback.PUT_DOWN -> HapticFeedbackConstants.CLOCK_TICK
-            Feedback.JUMP -> HapticFeedbackConstants.CONFIRM
-            Feedback.REJECT -> HapticFeedbackConstants.REJECT
-            Feedback.NONE -> return@LaunchedEffect
+        val settings = state.settings
+        fun haptic(constant: Int) { if (settings.hapticsOn) view.performHapticFeedback(constant) }
+        fun sound(sound: Sound) { if (settings.soundOn) sounds.play(sound) }
+        when (state.feedback) {
+            Feedback.PICK_UP -> { haptic(HapticFeedbackConstants.KEYBOARD_TAP); sound(Sound.PICKUP) }
+            Feedback.PUT_DOWN -> { haptic(HapticFeedbackConstants.CLOCK_TICK); sound(Sound.DROP) }
+            Feedback.REJECT -> { haptic(HapticFeedbackConstants.REJECT); sound(Sound.REJECT) }
+            Feedback.UNDO -> { haptic(HapticFeedbackConstants.CLOCK_TICK); sound(Sound.UNDO) }
+            Feedback.JUMP, Feedback.WIN, Feedback.STUCK -> {
+                haptic(HapticFeedbackConstants.CONFIRM)
+                sound(Sound.JUMP)
+                delay(80)
+                sound(Sound.CAPTURE)
+                if (state.feedback == Feedback.WIN) { delay(350); sound(Sound.WIN); haptic(HapticFeedbackConstants.CONFIRM) }
+                if (state.feedback == Feedback.STUCK) { delay(350); sound(Sound.STUCK) }
+            }
+            Feedback.NONE -> Unit
         }
-        view.performHapticFeedback(constant)
     }
 
     var confirmRestart by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     val restart: () -> Unit = {
         if (state.game.moveCount > 0 && !state.game.isOver) {
             confirmRestart = true
@@ -87,6 +110,7 @@ fun GameScreen(viewModel: GameViewModel, sizeClass: WindowSizeClass) {
             viewModel.restart()
         }
     }
+    val actions = Actions(onTap = viewModel::tap, onUndo = viewModel::undo, onRestart = restart, onSettings = { showSettings = true })
 
     Box(
         Modifier
@@ -100,11 +124,21 @@ fun GameScreen(viewModel: GameViewModel, sizeClass: WindowSizeClass) {
             val wide = sizeClass.widthSizeClass != WindowWidthSizeClass.Compact ||
                 configuration.screenWidthDp > configuration.screenHeightDp
             if (wide) {
-                WideLayout(state, viewModel::tap, viewModel::undo, restart)
+                WideLayout(state, actions)
             } else {
-                TallLayout(state, viewModel::tap, viewModel::undo, restart)
+                TallLayout(state, actions)
             }
         }
+    }
+
+    if (showSettings) {
+        SettingsSheet(
+            settings = state.settings,
+            onSound = viewModel::setSound,
+            onHaptics = viewModel::setHaptics,
+            onMarble = viewModel::setMarble,
+            onDismiss = { showSettings = false },
+        )
     }
 
     if (confirmRestart) {
@@ -130,57 +164,74 @@ fun GameScreen(viewModel: GameViewModel, sizeClass: WindowSizeClass) {
     }
 }
 
-/** Cover screen, portrait: words above, board in the middle, buttons below. */
+private class Actions(val onTap: (Int) -> Unit, val onUndo: () -> Unit, val onRestart: () -> Unit, val onSettings: () -> Unit)
+
+/** Cover screen, portrait: words above, board close beneath them, buttons at the bottom. */
 @Composable
-private fun TallLayout(state: UiState, onTap: (Int) -> Unit, onUndo: () -> Unit, onRestart: () -> Unit) {
+private fun TallLayout(state: UiState, actions: Actions) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(18.dp))
-        Wordmark()
-        Spacer(Modifier.height(6.dp))
-        StatusLine(state)
-        Spacer(Modifier.weight(1f))
-        Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-            Board(state, onTap)
-            GameOverCard(state, onUndo, onRestart)
+        Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                Wordmark()
+                Spacer(Modifier.height(6.dp))
+                StatusLine(state)
+            }
+            SettingsButton(actions.onSettings, Modifier.align(Alignment.TopEnd))
         }
         Spacer(Modifier.weight(1f))
+        Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+            Board(state, actions.onTap)
+            GameOverCard(state, actions.onUndo, actions.onRestart)
+        }
+        Spacer(Modifier.weight(1.2f))
         Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            UndoButton(state.game.canUndo, onUndo, Modifier.weight(1f))
-            RestartButton(onRestart, Modifier.weight(1f))
+            UndoButton(state.game.canUndo, actions.onUndo, Modifier.weight(1f))
+            RestartButton(actions.onRestart, Modifier.weight(1f))
         }
     }
 }
 
-/** Inner screen and landscape: the board on the left, a panel of words and buttons on the right. */
+/**
+ * Inner screen and landscape: a square board and a fixed-width panel, sized together so the board never
+ * runs under the panel or off the screen, and centred as one group.
+ */
 @Composable
-private fun WideLayout(state: UiState, onTap: (Int) -> Unit, onUndo: () -> Unit, onRestart: () -> Unit) {
-    Row(Modifier.fillMaxSize().padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1.4f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
-                Board(state, onTap)
-                GameOverCard(state, onUndo, onRestart)
+private fun WideLayout(state: UiState, actions: Actions) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        val panelWidth = if (maxWidth > 760.dp) 340.dp else 300.dp
+        val gap = 32.dp
+        val boardSide = minOf(maxHeight, maxWidth - panelWidth - gap)
+        Row(Modifier.width(boardSide + gap + panelWidth).height(boardSide), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(boardSide), contentAlignment = Alignment.Center) {
+                Board(state, actions.onTap)
+                GameOverCard(state, actions.onUndo, actions.onRestart)
             }
+            Spacer(Modifier.width(gap))
+            SidePanel(state, actions, Modifier.width(panelWidth).fillMaxHeight())
         }
-        Spacer(Modifier.width(24.dp))
-        Column(
-            Modifier.weight(1f).fillMaxHeight().padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Wordmark()
-            Spacer(Modifier.height(36.dp))
-            Text("PEGS LEFT", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
-            AnimatedContent(state.game.pegsLeft, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "pegs") { pegs ->
-                Text("$pegs", style = MaterialTheme.typography.displaySmall.copy(fontSize = 64.sp), color = Palette.brass)
-            }
-            Spacer(Modifier.height(18.dp))
-            Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
-            Text("${state.game.moveCount}", style = MaterialTheme.typography.headlineSmall, color = Palette.ivory)
-            Spacer(Modifier.height(40.dp))
-            UndoButton(state.game.canUndo, onUndo, Modifier.fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
-            RestartButton(onRestart, Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun SidePanel(state: UiState, actions: Actions, modifier: Modifier) {
+    Column(modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth()) {
+            Box(Modifier.align(Alignment.Center)) { Wordmark() }
+            SettingsButton(actions.onSettings, Modifier.align(Alignment.CenterEnd))
         }
+        Spacer(Modifier.weight(1f))
+        Text("PEGS LEFT", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
+        AnimatedContent(state.game.pegsLeft, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "pegs") { pegs ->
+            Text("$pegs", style = MaterialTheme.typography.displaySmall.copy(fontSize = 72.sp), color = Palette.brass)
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
+        Text("${state.game.moveCount}", style = MaterialTheme.typography.headlineSmall, color = Palette.ivory)
+        Spacer(Modifier.weight(1.3f))
+        UndoButton(state.game.canUndo, actions.onUndo, Modifier.fillMaxWidth())
+        Spacer(Modifier.height(12.dp))
+        RestartButton(actions.onRestart, Modifier.fillMaxWidth())
     }
 }
 
@@ -193,12 +244,20 @@ private fun Board(state: UiState, onTap: (Int) -> Unit) {
         lastMove = state.lastMove,
         onTap = onTap,
         modifier = Modifier.fillMaxSize(),
+        marble = state.settings.marble,
     )
 }
 
 @Composable
 private fun Wordmark() {
     Text("BrainVita", style = MaterialTheme.typography.displaySmall, color = Palette.ivory)
+}
+
+@Composable
+private fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Palette.ivoryDim)
+    }
 }
 
 @Composable
