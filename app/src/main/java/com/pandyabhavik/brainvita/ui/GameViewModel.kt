@@ -27,12 +27,16 @@ private val GAME_KEY = stringPreferencesKey("game")
 private val SOUND_KEY = booleanPreferencesKey("sound")
 private val HAPTICS_KEY = booleanPreferencesKey("haptics")
 private val MARBLE_KEY = stringPreferencesKey("marble")
+private val BOARD_KEY = stringPreferencesKey("board")
+private val BACKDROP_KEY = stringPreferencesKey("backdrop")
 
 /** The player's preferences. */
 data class Settings(
     val soundOn: Boolean = true,
     val hapticsOn: Boolean = true,
     val marble: Marble = Marble.BRASS,
+    val board: BoardFinish = BoardFinish.WALNUT,
+    val backdrop: Backdrop = Backdrop.BAIZE,
 )
 
 /** What the screen shows: the game and which peg, if any, is picked up. */
@@ -65,6 +69,8 @@ class GameViewModel(private val app: Application) : ViewModel() {
                 soundOn = prefs[SOUND_KEY] ?: true,
                 hapticsOn = prefs[HAPTICS_KEY] ?: true,
                 marble = Marble.byId(prefs[MARBLE_KEY]),
+                board = BoardFinish.byId(prefs[BOARD_KEY]),
+                backdrop = Backdrop.byId(prefs[BACKDROP_KEY]),
             )
             _state.value = UiState(game = saved ?: Game(), loaded = true, settings = settings)
         }
@@ -118,6 +124,16 @@ class GameViewModel(private val app: Application) : ViewModel() {
     fun setMarble(marble: Marble) {
         _state.update { it.copy(settings = it.settings.copy(marble = marble)) }
         viewModelScope.launch { app.store.edit { it[MARBLE_KEY] = marble.id } }
+    }
+
+    fun setBoard(board: BoardFinish) {
+        _state.update { it.copy(settings = it.settings.copy(board = board)) }
+        viewModelScope.launch { app.store.edit { it[BOARD_KEY] = board.id } }
+    }
+
+    fun setBackdrop(backdrop: Backdrop) {
+        _state.update { it.copy(settings = it.settings.copy(backdrop = backdrop)) }
+        viewModelScope.launch { app.store.edit { it[BACKDROP_KEY] = backdrop.id } }
     }
 
     private fun update(change: (UiState) -> UiState) {

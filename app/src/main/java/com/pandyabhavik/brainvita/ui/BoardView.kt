@@ -53,6 +53,7 @@ fun BoardView(
     onTap: (Int) -> Unit,
     modifier: Modifier = Modifier,
     marble: Marble = Marble.BRASS,
+    finish: BoardFinish = BoardFinish.WALNUT,
 ) {
     // 0 = the moment before the jump, 1 = settled in the new hole.
     val flight = remember(lastMove) { Animatable(if (lastMove == null) 1f else 0f) }
@@ -74,22 +75,22 @@ fun BoardView(
 
     val pegs = Rules.pegCount(position)
     // Geometry (with its grain paths) per canvas size, kept across recompositions.
-    val geometries = remember { HashMap<Pair<Float, Float>, Geometry>() }
+    val geometries = remember { HashMap<Pair<Float, Float>, BoardGeometry>() }
     Box(
         modifier
             .semantics { contentDescription = "BrainVita board, $pegs pegs" }
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    val g = Geometry(size.width.toFloat(), size.height.toFloat())
+                    val g = BoardGeometry(size.width.toFloat(), size.height.toFloat())
                     val hit = (0 until Board.size).minByOrNull { (g.centre(it) - tap).getDistanceSquared() } ?: return@detectTapGestures
                     if ((g.centre(hit) - tap).getDistance() <= g.unit * 0.5f) onTap(hit)
                 }
             }
             // The geometry and grain paths are built once per size; only the draw lambda re-runs per frame.
             .drawWithCache {
-                val g = geometries.getOrPut(size.width to size.height) { Geometry(size.width, size.height) }
+                val g = geometries.getOrPut(size.width to size.height) { BoardGeometry(size.width, size.height) }
                 onDrawBehind {
-                    drawBoard(g)
+                    drawBoard(g, finish)
 
                     val holeRadius = g.unit * 0.30f
                     val pegRadius = g.unit * 0.36f
@@ -98,7 +99,7 @@ fun BoardView(
 
                     for (i in 0 until Board.size) {
                         val c = g.centre(i)
-                        drawHole(c, holeRadius)
+                        drawHole(c, holeRadius, finish)
                         if (i == Board.centre && !Rules.hasPeg(position, i) && i != inFlight?.to) {
                             // The goal: a faint brass ring at the bottom of the centre hole.
                             drawCircle(Palette.brass.copy(alpha = 0.22f), holeRadius * 0.5f, c, style = Stroke(g.unit * 0.035f))
@@ -139,7 +140,7 @@ fun BoardView(
 }
 
 /** The wooden slab with grain, edge shading and a soft shadow on the baize. */
-private fun DrawScope.drawBoard(g: Geometry) {
+fun DrawScope.drawBoard(g: BoardGeometry, finish: BoardFinish) {
     val rect = g.boardRect
     val corner = CornerRadius(g.unit * 0.9f)
     // Shadow on the cloth.
@@ -149,12 +150,12 @@ private fun DrawScope.drawBoard(g: Geometry) {
     )
     // Wood body: lit from the top-left.
     drawRoundRect(
-        Brush.radialGradient(listOf(Palette.walnutLight, Palette.walnut, Palette.walnutDark), center = rect.center - Offset(rect.width * 0.25f, rect.height * 0.3f), radius = rect.width * 1.1f),
+        Brush.radialGradient(listOf(finish.light, finish.base, finish.dark), center = rect.center - Offset(rect.width * 0.25f, rect.height * 0.3f), radius = rect.width * 1.1f),
         topLeft = rect.topLeft, size = rect.size, cornerRadius = corner,
     )
     // Grain.
     val stroke = Stroke(g.unit * 0.025f)
-    for (path in g.grain) drawPath(path, Palette.grain, style = stroke)
+    for (path in g.grain) drawPath(path, finish.grain, style = stroke)
     // Bevelled edge: a light inner line on top/left, dark on bottom/right.
     val inset = g.unit * 0.12f
     drawRoundRect(Color.White.copy(alpha = 0.10f), topLeft = rect.topLeft + Offset(inset, inset), size = Size(rect.width - 2 * inset, rect.height - 2 * inset), cornerRadius = CornerRadius(corner.x - inset), style = Stroke(g.unit * 0.05f))
@@ -162,10 +163,10 @@ private fun DrawScope.drawBoard(g: Geometry) {
 }
 
 /** A bevelled hole: dark at the bottom, with a sliver of light catching its lower lip. */
-private fun DrawScope.drawHole(centre: Offset, radius: Float) {
-    drawCircle(Palette.holeLip, radius * 1.08f, centre + Offset(0f, radius * 0.10f))
+private fun DrawScope.drawHole(centre: Offset, radius: Float, finish: BoardFinish) {
+    drawCircle(finish.lip, radius * 1.08f, centre + Offset(0f, radius * 0.10f))
     drawCircle(
-        Brush.radialGradient(listOf(Palette.holeDeep, Palette.holeDeep, Palette.holeShadow), center = centre + Offset(radius * 0.15f, radius * 0.2f), radius = radius * 1.15f),
+        Brush.radialGradient(listOf(finish.holeDeep, finish.holeDeep, finish.holeShadow), center = centre + Offset(radius * 0.15f, radius * 0.2f), radius = radius * 1.15f),
         radius, centre,
     )
     drawCircle(Color.Black.copy(alpha = 0.5f), radius, centre - Offset(0f, radius * 0.08f), style = Stroke(radius * 0.12f))
@@ -194,7 +195,7 @@ fun DrawScope.drawPeg(centre: Offset, radius: Float, marble: Marble, lift: Float
 }
 
 /** Maps hole grid units to pixels so the board fits the canvas, square and centred. */
-private class Geometry(width: Float, height: Float) {
+class BoardGeometry(width: Float, height: Float) {
     /** Distance between neighbouring holes. The board is GRID holes plus a hole of margin on each side. */
     val unit: Float = min(width, height) / (Board.GRID + 1.2f)
     private val side = unit * (Board.GRID + 1.2f)
