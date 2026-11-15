@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -57,13 +58,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.brainvita.ui.theme.Palette
 import kotlinx.coroutines.delay
 
-/** The whole app: one board, a few words, two buttons. Laid out for the Fold's cover screen or its inner screen. */
+/**
+ * The whole app: one board, a few words, two buttons. Laid out for the Fold's cover and inner screens and
+ * for a regular phone such as the S25 Edge, held upright or on its side.
+ */
 @Composable
 fun GameScreen(viewModel: GameViewModel, sizeClass: WindowSizeClass) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -173,7 +178,7 @@ private class Actions(val onTap: (Int) -> Unit, val onUndo: () -> Unit, val onRe
 @Composable
 private fun TallLayout(state: UiState, actions: Actions, roomy: Boolean) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val sidePadding = if (roomy) 40.dp else 20.dp
+        val sidePadding = if (roomy) 40.dp else if (maxWidth < 380.dp) 14.dp else 20.dp
         val boardSide = minOf(maxWidth - sidePadding * 2, maxHeight - 230.dp).coerceAtLeast(120.dp)
         Column(Modifier.fillMaxSize().padding(horizontal = sidePadding), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(10.dp))
@@ -204,17 +209,26 @@ private fun TallLayout(state: UiState, actions: Actions, roomy: Boolean) {
 
 /**
  * Inner screen and landscape: a square board and a fixed-width panel, sized together so the board never
- * runs under the panel or off the screen, and centred as one group.
+ * runs under the panel or off the screen, and centred as one group. On a short screen (a regular phone,
+ * or the cover screen, on its side) the panel packs its counts and buttons into rows so all of it fits.
  */
 @Composable
 private fun WideLayout(state: UiState, actions: Actions) {
-    BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        val panelWidth = if (maxWidth > 760.dp) 340.dp else 300.dp
-        val gap = 32.dp
-        val boardSide = minOf(maxHeight, maxWidth - panelWidth - gap)
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val short = maxHeight < 440.dp
+        val outer = if (short) 12.dp else 24.dp
+        val height = maxHeight - outer * 2
+        val width = maxWidth - outer * 2
+        val panelWidth = if (width > 760.dp) 340.dp else if (short) 280.dp else 300.dp
+        val gap = if (short) 24.dp else 32.dp
+        val boardSide = minOf(height, width - panelWidth - gap)
         // The board sits on the right, under the right hand; the panel takes the left.
         Row(Modifier.width(boardSide + gap + panelWidth).height(boardSide), verticalAlignment = Alignment.CenterVertically) {
-            SidePanel(state, actions, Modifier.width(panelWidth).fillMaxHeight())
+            if (short) {
+                CompactSidePanel(state, actions, Modifier.width(panelWidth).fillMaxHeight())
+            } else {
+                SidePanel(state, actions, Modifier.width(panelWidth).fillMaxHeight())
+            }
             Spacer(Modifier.width(gap))
             Box(Modifier.size(boardSide), contentAlignment = Alignment.Center) {
                 Board(state, actions.onTap)
@@ -243,6 +257,36 @@ private fun SidePanel(state: UiState, actions: Actions, modifier: Modifier) {
         UndoButton(state.game.canUndo, actions.onUndo, Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         RestartButton(actions.onRestart, Modifier.fillMaxWidth())
+    }
+}
+
+/** The side panel for a short landscape screen: the same pieces, with counts and buttons side by side. */
+@Composable
+private fun CompactSidePanel(state: UiState, actions: Actions, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.Start) {
+        Box(Modifier.fillMaxWidth()) {
+            Box(Modifier.align(Alignment.CenterStart)) { Wordmark() }
+            SettingsButton(actions.onSettings, Modifier.align(Alignment.CenterEnd))
+        }
+        Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column {
+                Text("PEGS LEFT", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
+                AnimatedContent(state.game.pegsLeft, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "pegs") { pegs ->
+                    Text("$pegs", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp), color = Palette.brass)
+                }
+            }
+            Spacer(Modifier.width(32.dp))
+            Column(Modifier.padding(bottom = 8.dp)) {
+                Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Palette.ivoryDim)
+                Text("${state.game.moveCount}", style = MaterialTheme.typography.headlineSmall, color = Palette.ivory)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            UndoButton(state.game.canUndo, actions.onUndo, Modifier.weight(1f), height = 48.dp)
+            RestartButton(actions.onRestart, Modifier.weight(1f), height = 48.dp)
+        }
     }
 }
 
@@ -285,13 +329,13 @@ private fun StatusLine(state: UiState) {
 }
 
 @Composable
-private fun UndoButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    PillButton("Undo", Icons.AutoMirrored.Filled.Undo, onClick, modifier, enabled = enabled, filled = false)
+private fun UndoButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 52.dp) {
+    PillButton("Undo", Icons.AutoMirrored.Filled.Undo, onClick, modifier.height(height), enabled = enabled, filled = false)
 }
 
 @Composable
-private fun RestartButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    PillButton("Restart", Icons.Filled.Refresh, onClick, modifier, enabled = true, filled = false)
+private fun RestartButton(onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 52.dp) {
+    PillButton("Restart", Icons.Filled.Refresh, onClick, modifier.height(height), enabled = true, filled = false)
 }
 
 @Composable
@@ -299,7 +343,7 @@ private fun PillButton(label: String, icon: ImageVector, onClick: () -> Unit, mo
     val shape = RoundedCornerShape(50)
     if (filled) {
         Button(
-            onClick = onClick, enabled = enabled, modifier = modifier.height(52.dp), shape = shape,
+            onClick = onClick, enabled = enabled, modifier = modifier, shape = shape,
             colors = ButtonDefaults.buttonColors(containerColor = Palette.brass, contentColor = Palette.walnutDark),
         ) {
             Icon(icon, contentDescription = null)
@@ -308,7 +352,8 @@ private fun PillButton(label: String, icon: ImageVector, onClick: () -> Unit, mo
         }
     } else {
         OutlinedButton(
-            onClick = onClick, enabled = enabled, modifier = modifier.height(52.dp), shape = shape,
+            onClick = onClick, enabled = enabled, modifier = modifier, shape = shape,
+            contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.ivory, disabledContentColor = Palette.ivoryDim.copy(alpha = 0.4f)),
         ) {
             Icon(icon, contentDescription = null)
@@ -318,9 +363,16 @@ private fun PillButton(label: String, icon: ImageVector, onClick: () -> Unit, mo
     }
 }
 
-/** Slides up over the board when the game is won or stuck. */
+/** Slides up over the board when the game is won or stuck. Tighter on the smaller board of a regular phone. */
 @Composable
 private fun GameOverCard(state: UiState, onUndo: () -> Unit, onRestart: () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        GameOverCardContent(state, onUndo, onRestart, small = maxHeight < 380.dp)
+    }
+}
+
+@Composable
+private fun GameOverCardContent(state: UiState, onUndo: () -> Unit, onRestart: () -> Unit, small: Boolean) {
     val game = state.game
     AnimatedVisibility(
         visible = game.isOver,
@@ -329,16 +381,16 @@ private fun GameOverCard(state: UiState, onUndo: () -> Unit, onRestart: () -> Un
     ) {
         Column(
             Modifier
-                .fillMaxWidth(0.78f)
+                .fillMaxWidth(if (small) 0.88f else 0.78f)
                 .clip(RoundedCornerShape(24.dp))
                 .background(state.settings.backdrop.edge.copy(alpha = 0.94f))
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .padding(horizontal = if (small) 16.dp else 24.dp, vertical = if (small) 16.dp else 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val won = game.isWon
             Text(
                 if (won) "Brilliant" else "No moves left",
-                style = MaterialTheme.typography.displaySmall,
+                style = if (small) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.displaySmall,
                 color = if (won) Palette.brass else Palette.ivory,
                 textAlign = TextAlign.Center,
             )
@@ -349,12 +401,12 @@ private fun GameOverCard(state: UiState, onUndo: () -> Unit, onRestart: () -> Un
                 color = Palette.ivoryDim,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(if (small) 14.dp else 24.dp))
             Button(
-                onClick = onRestart, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(50),
+                onClick = onRestart, modifier = Modifier.fillMaxWidth().height(if (small) 44.dp else 50.dp), shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.brass, contentColor = Palette.walnutDark),
             ) { Text("New game", style = MaterialTheme.typography.labelLarge) }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(if (small) 4.dp else 10.dp))
             TextButton(onClick = onUndo, modifier = Modifier.fillMaxWidth()) {
                 Text("Undo last move", color = Palette.ivoryDim, style = MaterialTheme.typography.labelLarge)
             }

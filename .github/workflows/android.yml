@@ -78,7 +78,8 @@ jobs:
           prerelease: true
 
   # On an emulator: launch the real release APK and walk the game with the screen test, saving
-  # screenshots, at the Fold's cover-screen size and its inner-screen size.
+  # screenshots, at the Fold's cover-screen and inner-screen sizes and at a regular phone's size (the
+  # Galaxy S25 Edge), upright and on its side.
   device-tests:
     needs: build
     runs-on: ubuntu-latest
@@ -86,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        screen: [cover-screen, inner-screen]
+        screen: [cover-screen, inner-screen, phone-screen, phone-landscape]
     steps:
       - uses: actions/checkout@v4
 
