@@ -4,7 +4,7 @@
 set -uo pipefail
 apkdir="$1"     # folder with BrainVita.apk, BrainVita-debug.apk, BrainVita-androidTest.apk
 results="$2"
-screen="$3"     # cover-screen or inner-screen
+screen="$3"     # cover-screen, inner-screen, phone-screen or phone-landscape
 pkg=com.pandyabhavik.brainvita
 mkdir -p "$results"
 status=0
@@ -18,6 +18,15 @@ if [ "$screen" = cover-screen ]; then
   adb shell wm density 420
   # Larger text, as many people use on the small screen: nothing should be cut off.
   adb shell settings put system font_scale 1.15
+elif [ "$screen" = phone-screen ] || [ "$screen" = phone-landscape ]; then
+  # A regular phone: the Galaxy S25 Edge at its default FHD+ resolution, with large text.
+  adb shell wm size 1080x2340
+  adb shell wm density 450
+  adb shell settings put system font_scale 1.15
+  if [ "$screen" = phone-landscape ]; then
+    adb shell settings put system accelerometer_rotation 0
+    adb shell settings put system user_rotation 1
+  fi
 else
   adb shell wm size 1968x2184
   adb shell wm density 374

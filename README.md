@@ -1,6 +1,6 @@
 # BrainVita
 
-The classic 33-hole peg solitaire, built for the Galaxy Z Fold 8 (Android 11 and later). Jump pegs
+The classic 33-hole peg solitaire, built for the Galaxy Z Fold 8 and regular phones such as the Galaxy S25 Edge (Android 11 and later). Jump pegs
 over each other to remove them; finish with one peg in the centre.
 
 - One game at a time. Close the app and come back: the game carries on where you left it, until you
@@ -26,9 +26,10 @@ Every push to `main` (or a manual run of the workflow):
 1. Runs the unit tests and builds the app.
 2. Signs the APK with the release key and publishes it as a GitHub release, `build-N`, with
    `BrainVita.apk` attached.
-3. Starts two emulators at the Fold's cover-screen size (1080×2520, large text) and inner-screen size
-   (1968×2184), installs the APK, opens it, runs the screen test, and publishes the screenshots as
-   `build-N-cover-screen` and `build-N-inner-screen` releases.
+3. Starts four emulators: the Fold's cover-screen size (1080×2520, large text) and inner-screen size
+   (1968×2184), and a regular phone, the S25 Edge (1080×2340, large text), upright and on its side.
+   Each installs the APK, opens it, runs the screen test, and publishes the screenshots as a
+   `build-N-<screen>` release.
 
 ## Install on the phone
 
