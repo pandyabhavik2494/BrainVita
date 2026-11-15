@@ -19,14 +19,15 @@ if [ "$screen" = cover-screen ]; then
   # Larger text, as many people use on the small screen: nothing should be cut off.
   adb shell settings put system font_scale 1.15
 elif [ "$screen" = phone-screen ] || [ "$screen" = phone-landscape ]; then
-  # A regular phone: the Galaxy S25 Edge at its default FHD+ resolution, with large text.
-  adb shell wm size 1080x2340
+  # A regular phone: the Galaxy S25 Edge at its default FHD+ resolution, with large text. On its side
+  # the screen is simply set wider than tall (the emulator ignores rotation requests here).
+  if [ "$screen" = phone-landscape ]; then
+    adb shell wm size 2340x1080
+  else
+    adb shell wm size 1080x2340
+  fi
   adb shell wm density 450
   adb shell settings put system font_scale 1.15
-  if [ "$screen" = phone-landscape ]; then
-    adb shell settings put system accelerometer_rotation 0
-    adb shell settings put system user_rotation 1
-  fi
 else
   adb shell wm size 1968x2184
   adb shell wm density 374
